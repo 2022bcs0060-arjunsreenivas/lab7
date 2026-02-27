@@ -17,7 +17,7 @@ pipeline {
 
         stage('Run Container') {
             steps {
-                sh 'docker run -d -p $PORT:$PORT --name $CONTAINER_NAME $IMAGE_NAME'
+                sh 'docker run -d --name mlapi -p $PORT:$PORT --name $CONTAINER_NAME $IMAGE_NAME'
             }
         }
 
@@ -25,7 +25,7 @@ pipeline {
             steps {
                 sh '''
                 for i in {1..10}; do
-                  curl -f http://localhost:$PORT/health && break
+                  curl -f http://mlapi:$PORT/health && break
                   sleep 3
                 done
                 '''
@@ -35,7 +35,7 @@ pipeline {
         stage('Valid Request') {
             steps {
                 sh '''
-                response=$(curl -s -X POST http://localhost:$PORT/predict \
+                response=$(curl -s -X POST http://mlapi:$PORT/predict \
                   -H "Content-Type: application/json" \
                   -d @right.json)
 
@@ -48,7 +48,7 @@ pipeline {
         stage('Invalid Request') {
             steps {
                 sh '''
-                curl -X POST http://localhost:$PORT/predict \
+                curl -X POST http://mlapi:$PORT/predict \
                 -H "Content-Type: application/json" \
                 -d @wrong.json || true
                 '''
