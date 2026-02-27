@@ -17,17 +17,26 @@ pipeline {
 
         stage('Run Container') {
             steps {
-                sh 'docker run -d --name mlapi -p $PORT:$PORT --name $CONTAINER_NAME $IMAGE_NAME'
+                sh '''
+                docker rm -f $CONTAINER_NAME || true
+                docker run -d -p $PORT:$PORT --name $CONTAINER_NAME $IMAGE_NAME
+                '''
             }
         }
 
         stage('Wait for API') {
             steps {
                 sh '''
-                for i in {1..10}; do
-                  curl -f http://mlapi:$PORT/health && break
-                  sleep 3
+                timeout=30
+                until curl -s -o /dev/null -w "%{http_code}" http://localhost:$PORT/health | grep -q 200; do
+                    if [ $timeout -le 0 ]; then
+                        echo "API did not start"
+                        exit 1
+                    fi
+                    sleep 2
+                    timeout=$((timeout-2))
                 done
+                echo "API is ready"
                 '''
             }
         }
@@ -35,12 +44,13 @@ pipeline {
         stage('Valid Request') {
             steps {
                 sh '''
-                response=$(curl -s -X POST http://mlapi:$PORT/predict \
-                  -H "Content-Type: application/json" \
-                  -d @right.json)
+                response=$(curl -s -X POST http://localhost:$PORT/predict \
+                -H "Content-Type: application/json" \
+                -d @right.json)
 
-                echo $response
-                echo $response | grep prediction
+                echo "Valid Response: $response"
+
+                echo $response | jq '.prediction' > /dev/null || exit 1
                 '''
             }
         }
@@ -48,17 +58,32 @@ pipeline {
         stage('Invalid Request') {
             steps {
                 sh '''
-                curl -X POST http://mlapi:$PORT/predict \
+                status=$(curl -s -o /dev/null -w "%{http_code}" \
+                -X POST http://localhost:$PORT/predict \
                 -H "Content-Type: application/json" \
-                -d @wrong.json || true
+                -d @wrong.json)
+
+                if [ "$status" -eq 200 ]; then
+                    echo "Invalid input should not return 200"
+                    exit 1
+                fi
                 '''
             }
         }
 
         stage('Stop Container') {
             steps {
-                sh 'docker rm -f $CONTAINER_NAME'
+                 sh '''
+                docker stop $CONTAINER_NAME
+                docker rm $CONTAINER_NAME
+                '''
             }
+        }
+    }
+
+    post {
+        always {
+            sh 'docker rm -f $CONTAINER || true'
         }
     }
 }
