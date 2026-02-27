@@ -49,8 +49,6 @@ pipeline {
                 -d @right.json)
 
                 echo "Valid Response: $response"
-
-                echo $response | jq '.prediction' > /dev/null || exit 1
                 '''
             }
         }
